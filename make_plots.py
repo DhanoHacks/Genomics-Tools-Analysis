@@ -19,7 +19,7 @@ human_agg3 = [0.085, 0.953, 5.52, 0.531]
 mouse_agg3 = [0.08, 0.915, 5.77, 0.542]
 
 # Interval query times (mean) in seconds
-human_int1 = [0.174, 1.76, 0, 6.63]
+human_int1 = [0.174, 1.76, 60, 6.63]
 mouse_int1 = [0.124, 3.23, 65, 6.46]
 
 human_int2 = [0.024, 0.399, 89, 7.41]
