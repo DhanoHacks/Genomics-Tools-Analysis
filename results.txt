@@ -20,7 +20,7 @@ Human:
         Aggregate Query 1: 44 s ± 32.8 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
         Aggregate Query 2: 43.8 s ± 80.5 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
         Aggregate Query 3: 5.52 s ± 31.1 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
-        Interval Query 1: 
+        Interval Query 1: 1min 0s ± 321 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
         Interval Query 2: 1min 29s ± 414 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
         Interval Query 3: 1min 28s ± 441 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
     sql-pybedtools:
