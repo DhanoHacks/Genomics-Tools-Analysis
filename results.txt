@@ -1,5 +1,5 @@
 Human:
-    plyrange:
+    plyranges:
         Finished reading into object in time 28.811 s
         Aggregate Query 1: 15.091 s
         Aggregate Query 2: 15.164 s
@@ -33,7 +33,7 @@ Human:
         Interval Query 3: 7.28 s ± 37.2 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
 
 Mouse:
-    plyrange:
+    plyranges:
         Finished reading into pyranges object in time 20.365 s
         Aggregate Query 1: 14.152 s
         Aggregate Query 2: 14.072 s
