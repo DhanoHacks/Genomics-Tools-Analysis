@@ -1,0 +1,162 @@
+---
+title: "Genomic Interval Queries with plyranges"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+---
+Load Libraries
+---
+
+```{r}
+library(plyranges)
+library(GenomicRanges)
+library(rtracklayer)
+```
+
+---
+Load Data File
+---
+
+```{r}
+# Load GTF file using rtracklayer
+count_time <- system.time({
+  gtf_file <- "/home/U210050044/data/DH607-project/gencode.vM36.annotation.gtf"
+  gtf_data <- rtracklayer::import(gtf_file)
+})
+
+# Display the first few rows
+head(gtf_data)
+print(count_time)
+```
+
+---
+Aggregate Queries: Counting transcripts, calculating exon lengths, and grouping features
+Aggregate Query 1: Count the number of exons for each gene
+---
+
+```{r}
+# Filter for exon features
+exons <- gtf_data[gtf_data$type == "exon"]
+
+# Time the aggregation operation
+count_time <- system.time({
+  exon_counts <- exons %>%
+    group_by(gene_id) %>%
+    summarise(exon_count = n())
+})
+
+# Display results
+print(head(exon_counts))
+print(count_time)
+```
+
+---
+Aggregate Query 2: Calculate the total length of exons for each gene
+---
+
+```{r}
+# Time the aggregation operation
+total_length_time <- system.time({
+  total_exon_lengths <- exons %>%
+    mutate(exon_length = width(.)) %>%
+    group_by(gene_id) %>%
+    summarise(total_length = sum(exon_length))
+})
+
+# Display results
+print(head(total_exon_lengths))
+print(total_length_time)
+```
+
+---
+Aggregate Query 3: Identify the chromosome with the highest number of transcripts
+---
+
+```{r}
+# Filter for transcript features
+transcripts <- gtf_data[gtf_data$type == "transcript"]
+
+# Time the aggregation operation
+highest_transcript_time <- system.time({
+  transcript_counts <- transcripts %>%
+    group_by(seqnames) %>%
+    summarise(transcript_count = n())
+  
+  # Convert to data frame for sorting
+  transcript_counts_df <- as.data.frame(transcript_counts)
+  
+  # Arrange and select the top chromosome
+  top_chromosome <- transcript_counts_df[order(-transcript_counts_df$transcript_count), ][1, ]
+})
+
+# Display results
+print(top_chromosome)
+print(highest_transcript_time)
+```
+
+---
+Interval Arithmetic
+Query 1: Merging Overlapping Exon Intervals
+---
+
+```{r}
+# Filter for exon features
+exon_intervals <- gtf_data[gtf_data$type == "exon"]
+
+# Time the merging operation
+merge_time <- system.time({
+  merged_exons <- exon_intervals %>% reduce_ranges_directed()
+})
+
+# Display results
+print(merged_exons)
+print(merge_time)
+```
+
+---
+Query 2: Finding Overlaps with a Specific Interval
+Find all gene features that overlap a given interval chr1:100000-200000
+---
+
+```{r}
+# Define query interval
+query_interval <- GRanges(seqnames = "1", ranges = IRanges(start = 100000, end = 200000))
+
+# Filter for gene features
+gene_intervals <- gtf_data[gtf_data$type == "gene"]
+
+# Time the overlap query
+overlap_time <- system.time({
+  overlapping_genes <- gene_intervals %>% filter_by_overlaps(query_interval)
+})
+
+# Display results
+print(overlapping_genes)
+print(overlap_time)
+```
+
+---
+Query 3: Subtracting Intervals
+Remove a set of repetitive regions from the exon features.
+chr1:15M-16M,20M-21M
+---
+
+```{r}
+# Define repetitive regions
+repetitive_regions <- GRanges(seqnames = c("1", "1"),
+                              ranges = IRanges(start = c(12000000, 16000000),
+                                               end = c(12800000, 16800000)))
+
+# Time the subtraction operation
+subtract_time <- system.time({
+  subtracted_exons <- exon_intervals %>% setdiff(repetitive_regions)
+})
+
+# Display results
+print(subtracted_exons)
+print(subtract_time)
+```
