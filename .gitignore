@@ -1,0 +1,7 @@
+schema.txt
+*.sqlite3
+*.gtf
+*.out
+__pycache__/
+.vscode/
+.venv/
