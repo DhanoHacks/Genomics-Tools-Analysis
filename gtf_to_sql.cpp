@@ -8,9 +8,11 @@
 #include <algorithm>
 #include <thread>
 #include <mutex>
+#include <semaphore>
 using namespace std;
 
 mutex gtf_mtx, sql_mutex;
+int num_finished = 0, num_threads = 8;
 
 std::string processLine(const std::string &line) {
     // Split the line by tabs
@@ -54,7 +56,7 @@ std::string processLine(const std::string &line) {
     }
 
     // Construct the SQL INSERT statement
-    std::string sql = "INSERT INTO human(";
+    std::string sql = "INSERT INTO human2(";
     std::string keysStr;
     std::string valuesStr;
 
@@ -71,7 +73,7 @@ std::string processLine(const std::string &line) {
     return sql;
 }
 
-void mythread(ifstream *inputFile, sqlite3 **db){
+void myreadthread(ifstream *inputFile, string *commonlinedata){
     string line, linedata="";
     vector<string> lines;
     int linecount = 0;
@@ -102,27 +104,61 @@ void mythread(ifstream *inputFile, sqlite3 **db){
         lines.clear();
 
         if(linecount%50 == 0){
-            sql_mutex.lock();
-            sqlite3_exec(*db, linedata.c_str(), NULL, NULL, NULL);
-            sql_mutex.unlock();
-            linedata = "";
+            if(sql_mutex.try_lock()){
+                *commonlinedata += linedata;
+                sql_mutex.unlock();
+                linedata = "";
+            }
         }
+
+        // if(linecount%50 == 0){
+        //     sql_mutex.lock();
+        //     sqlite3_exec(*db, linedata.c_str(), NULL, NULL, NULL);
+        //     sql_mutex.unlock();
+        //     linedata = "";
+        // }
     }
+    sql_mutex.lock();
     if(linedata != ""){
-        sql_mutex.lock();
-        sqlite3_exec(*db, linedata.c_str(), NULL, NULL, NULL);
-        sql_mutex.unlock();
+        // sqlite3_exec(*db, linedata.c_str(), NULL, NULL, NULL);
+        *commonlinedata += linedata;
+    }
+    num_finished++;
+    sql_mutex.unlock();
+}
+
+void mywritethread(sqlite3 **db, string *commonlinedata){
+    while(true){
+        if(sql_mutex.try_lock()){
+            if(commonlinedata->length() > 0){
+                string *copy_commonlinedata = new string();
+                copy_commonlinedata->append(*commonlinedata);
+                delete commonlinedata;
+                commonlinedata = new string();
+                sql_mutex.unlock();
+                sqlite3_exec(*db, copy_commonlinedata->c_str(), NULL, NULL, NULL);
+                delete copy_commonlinedata;
+            }
+            else{
+                if(num_finished == num_threads){
+                    sql_mutex.unlock();
+                    return;
+                }
+                sql_mutex.unlock();
+            }
+        }
     }
 }
 
 int main(){
     sqlite3 *db;
     int rc;
-    rc = sqlite3_open("db2.sqlite3", &db);
-    rc = sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS \"human\" (\"Chromosome\" TEXT, \"Source\" TEXT,\"Feature\" TEXT,\"Start\" INTEGER,\"End\" INTEGER,\"Score\" TEXT,\"Strand\" TEXT,\"Frame\" TEXT,\"gene_id\" TEXT,\"gene_version\" TEXT,\"gene_source\" TEXT,\"gene_biotype\" TEXT,\"transcript_id\" TEXT,\"transcript_version\" TEXT,\"transcript_source\" TEXT,\"transcript_biotype\" TEXT,\"tag\" TEXT,\"transcript_support_level\" TEXT,\"exon_number\" TEXT,\"exon_id\" TEXT,\"exon_version\" TEXT,\"gene_name\" TEXT,\"transcript_name\" TEXT,\"protein_id\" TEXT,\"protein_version\" TEXT,\"ccds_id\" TEXT);" , NULL, NULL, NULL);
+    rc = sqlite3_open("db.sqlite3", &db);
+    rc = sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS \"human2\" (\"Chromosome\" TEXT, \"Source\" TEXT,\"Feature\" TEXT,\"Start\" INTEGER,\"End\" INTEGER,\"Score\" TEXT,\"Strand\" TEXT,\"Frame\" TEXT,\"gene_id\" TEXT,\"gene_version\" TEXT,\"gene_source\" TEXT,\"gene_biotype\" TEXT,\"transcript_id\" TEXT,\"transcript_version\" TEXT,\"transcript_source\" TEXT,\"transcript_biotype\" TEXT,\"tag\" TEXT,\"transcript_support_level\" TEXT,\"exon_number\" TEXT,\"exon_id\" TEXT,\"exon_version\" TEXT,\"gene_name\" TEXT,\"transcript_name\" TEXT,\"protein_id\" TEXT,\"protein_version\" TEXT,\"ccds_id\" TEXT);" , NULL, NULL, NULL);
     rc = sqlite3_exec(db, "PRAGMA journal_mode = OFF; PRAGMA synchronous = 0; PRAGMA cache_size = 1000000; PRAGMA locking_mode = EXCLUSIVE; PRAGMA temp_store = MEMORY;", NULL, NULL, NULL);
     // open file "Homo_sapiens.GRCh38.112.chr.gtf"
     ifstream inputFile("Homo_sapiens.GRCh38.112.chr.gtf");
+    string *commonlinedata = new string();
     // string line;
     // int linecount = 0;
     // while (getline(inputFile, line)) {
@@ -137,22 +173,25 @@ int main(){
     //     // string linedata = processLine(line);
     //     // rc = sqlite3_exec(db, linedata.c_str(), NULL, NULL, NULL);
     // }
-    thread t1(mythread, &inputFile, &db);
-    thread t2(mythread, &inputFile, &db);
-    thread t3(mythread, &inputFile, &db);
-    thread t4(mythread, &inputFile, &db);
-    thread t5(mythread, &inputFile, &db);
-    thread t6(mythread, &inputFile, &db);
-    thread t7(mythread, &inputFile, &db);
-    thread t8(mythread, &inputFile, &db);
-    t1.join();
-    t2.join();
-    t3.join();
-    t4.join();
-    t5.join();
-    t6.join();
-    t7.join();
-    t8.join();
+    thread t1(myreadthread, &inputFile, commonlinedata);
+    thread t2(myreadthread, &inputFile, commonlinedata);
+    thread t3(myreadthread, &inputFile, commonlinedata);
+    thread t4(myreadthread, &inputFile, commonlinedata);
+    thread t5(myreadthread, &inputFile, commonlinedata);
+    thread t6(myreadthread, &inputFile, commonlinedata);
+    thread t7(myreadthread, &inputFile, commonlinedata);
+    thread t8(myreadthread, &inputFile, commonlinedata);
+    thread w(mywritethread, &db, commonlinedata);
+
+    t1.join(); cout<<"Thread1 finished execution"<<endl;
+    t2.join(); cout<<"Thread2 finished execution"<<endl;
+    t3.join(); cout<<"Thread3 finished execution"<<endl;
+    t4.join(); cout<<"Thread4 finished execution"<<endl;
+    t5.join(); cout<<"Thread5 finished execution"<<endl;
+    t6.join(); cout<<"Thread6 finished execution"<<endl;
+    t7.join(); cout<<"Thread7 finished execution"<<endl;
+    t8.join(); cout<<"Thread8 finished execution"<<endl;
+    w.join(); cout<<"Write Thread finished execution"<<endl;
     rc = sqlite3_exec(db, "CREATE INDEX \"ix_human_index\"ON \"human\" (\"index\");", NULL, NULL, NULL);
     sqlite3_close(db);
 }
