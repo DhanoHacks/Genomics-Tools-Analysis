@@ -8,14 +8,15 @@
 #include <algorithm>
 #include <thread>
 #include <mutex>
-#include <semaphore>
+#include <condition_variable>
 using namespace std;
 
 mutex gtf_mtx, sql_mutex;
+condition_variable cv_read, cv_write;
 int num_finished = 0, num_threads = 8;
+bool writer_should_exit = false;
 
 std::string processLine(const std::string &line) {
-    // Split the line by tabs
     std::istringstream lineStream(line);
     std::string token;
     std::vector<std::string> fields;
@@ -28,7 +29,6 @@ std::string processLine(const std::string &line) {
         throw std::runtime_error("Error: Line has less than 9 tab-separated fields.");
     }
 
-    // Map the first 8 fields to keys
     std::unordered_map<std::string, std::string> data;
     std::vector<std::string> keys = {"Chromosome", "Source", "Feature", "Start", "End", "Score", "Strand", "Frame"};
 
@@ -36,7 +36,6 @@ std::string processLine(const std::string &line) {
         data[keys[i]] = fields[i];
     }
 
-    // Parse the additional key-value pairs from the 9th field
     std::string attributes = fields[8];
     std::istringstream attrStream(attributes);
     std::string attribute;
@@ -48,17 +47,13 @@ std::string processLine(const std::string &line) {
         if (pos != std::string::npos) {
             std::string key = attribute.substr(0, pos);
             std::string value = attribute.substr(pos + 1);
-
-            // Remove quotes from value if present
             value.erase(std::remove(value.begin(), value.end(), '"'), value.end());
             data[key] = value;
         }
     }
 
-    // Construct the SQL INSERT statement
     std::string sql = "INSERT INTO human2(";
-    std::string keysStr;
-    std::string valuesStr;
+    std::string keysStr, valuesStr;
 
     for (const auto &pair : data) {
         if (!keysStr.empty()) {
@@ -73,125 +68,106 @@ std::string processLine(const std::string &line) {
     return sql;
 }
 
-void myreadthread(ifstream *inputFile, string *commonlinedata){
-    string line, linedata="";
+void myreadthread(ifstream *inputFile, string *commonlinedata) {
+    string line, linedata = "";
     vector<string> lines;
     int linecount = 0;
     bool eof = false;
+
     while (!eof) {
         gtf_mtx.lock();
-        for(int i=0; i<10; i++){
-            if(!getline(*inputFile, line)){
+        for (int i = 0; i < 10; i++) {
+            if (!getline(*inputFile, line)) {
                 eof = true;
                 break;
             }
-            // ignore first few lines beginning with #
-            if(line[0] == '#'){
+            if (line[0] == '#') {
                 continue;
             }
             lines.push_back(line);
         }
         gtf_mtx.unlock();
 
-        linecount+=10;
-        if (linecount%100000 == 0){
-            cout<<"Processed "<<linecount<<" lines"<<endl;
+        linecount += lines.size();
+        if (linecount % 100000 == 0) {
+            // cout << "Processed " << linecount << " lines" << endl;
         }
 
-        for(auto line: lines){
+        for (auto &line : lines) {
             linedata += processLine(line);
         }
         lines.clear();
 
-        if(linecount%50 == 0){
-            if(sql_mutex.try_lock()){
-                *commonlinedata += linedata;
-                sql_mutex.unlock();
-                linedata = "";
-            }
-        }
+        unique_lock<mutex> lock(sql_mutex);
+        cv_read.wait(lock, [&]() { return commonlinedata->length() < 80 || writer_should_exit; });
 
-        // if(linecount%50 == 0){
-        //     sql_mutex.lock();
-        //     sqlite3_exec(*db, linedata.c_str(), NULL, NULL, NULL);
-        //     sql_mutex.unlock();
-        //     linedata = "";
-        // }
+        *commonlinedata += linedata;
+        linedata.clear();
+
+        if (commonlinedata->length() >= 80) {
+            cv_write.notify_one();
+        }
     }
-    sql_mutex.lock();
-    if(linedata != ""){
-        // sqlite3_exec(*db, linedata.c_str(), NULL, NULL, NULL);
+
+    unique_lock<mutex> lock(sql_mutex);
+    if (!linedata.empty()) {
         *commonlinedata += linedata;
     }
     num_finished++;
-    sql_mutex.unlock();
+    if (num_finished == num_threads) {
+        writer_should_exit = true;
+        cv_write.notify_one();
+    }
 }
 
-void mywritethread(sqlite3 **db, string *commonlinedata){
-    while(true){
-        if(sql_mutex.try_lock()){
-            if(commonlinedata->length() > 0){
-                string *copy_commonlinedata = new string();
-                copy_commonlinedata->append(*commonlinedata);
-                delete commonlinedata;
-                commonlinedata = new string();
-                sql_mutex.unlock();
-                sqlite3_exec(*db, copy_commonlinedata->c_str(), NULL, NULL, NULL);
-                delete copy_commonlinedata;
-            }
-            else{
-                if(num_finished == num_threads){
-                    sql_mutex.unlock();
-                    return;
-                }
-                sql_mutex.unlock();
-            }
+void mywritethread(sqlite3 **db, string *commonlinedata) {
+    while (true) {
+        unique_lock<mutex> lock(sql_mutex);
+        cv_write.wait(lock, [&]() { return commonlinedata->length() >= 80 || writer_should_exit; });
+
+        if (!commonlinedata->empty()) {
+            string data_to_write = move(*commonlinedata);
+            commonlinedata->clear();
+            lock.unlock();
+
+            sqlite3_exec(*db, data_to_write.c_str(), NULL, NULL, NULL);
+            // cout << "Pushed " << data_to_write.length() << " bytes to db" << endl;
+
+            lock.lock();
+            cv_read.notify_all();
+        }
+
+        if (writer_should_exit && commonlinedata->empty()) {
+            break;
         }
     }
 }
 
-int main(){
+int main() {
     sqlite3 *db;
-    int rc;
-    rc = sqlite3_open("db.sqlite3", &db);
-    rc = sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS \"human2\" (\"Chromosome\" TEXT, \"Source\" TEXT,\"Feature\" TEXT,\"Start\" INTEGER,\"End\" INTEGER,\"Score\" TEXT,\"Strand\" TEXT,\"Frame\" TEXT,\"gene_id\" TEXT,\"gene_version\" TEXT,\"gene_source\" TEXT,\"gene_biotype\" TEXT,\"transcript_id\" TEXT,\"transcript_version\" TEXT,\"transcript_source\" TEXT,\"transcript_biotype\" TEXT,\"tag\" TEXT,\"transcript_support_level\" TEXT,\"exon_number\" TEXT,\"exon_id\" TEXT,\"exon_version\" TEXT,\"gene_name\" TEXT,\"transcript_name\" TEXT,\"protein_id\" TEXT,\"protein_version\" TEXT,\"ccds_id\" TEXT);" , NULL, NULL, NULL);
-    rc = sqlite3_exec(db, "PRAGMA journal_mode = OFF; PRAGMA synchronous = 0; PRAGMA cache_size = 1000000; PRAGMA locking_mode = EXCLUSIVE; PRAGMA temp_store = MEMORY;", NULL, NULL, NULL);
-    // open file "Homo_sapiens.GRCh38.112.chr.gtf"
+    sqlite3_open(":memory:", &db);
+    sqlite3_exec(db, "DROP TABLE IF EXISTS human2;", NULL, NULL, NULL);
+    sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS \"human2\" (\"Chromosome\" TEXT, \"Source\" TEXT, \"Feature\" TEXT, \"Start\" INTEGER, \"End\" INTEGER, \"Score\" TEXT, \"Strand\" TEXT, \"Frame\" TEXT, \"gene_id\" TEXT, \"gene_version\" TEXT, \"gene_source\" TEXT, \"gene_biotype\" TEXT, \"transcript_id\" TEXT, \"transcript_version\" TEXT, \"transcript_source\" TEXT, \"transcript_biotype\" TEXT, \"tag\" TEXT, \"transcript_support_level\" TEXT, \"exon_number\" TEXT, \"exon_id\" TEXT, \"exon_version\" TEXT, \"gene_name\" TEXT, \"transcript_name\" TEXT, \"protein_id\" TEXT, \"protein_version\" TEXT, \"ccds_id\" TEXT);", NULL, NULL, NULL);
+    sqlite3_exec(db, "PRAGMA journal_mode = OFF; PRAGMA synchronous = 0; PRAGMA cache_size = 1000000; PRAGMA locking_mode = EXCLUSIVE; PRAGMA temp_store = MEMORY;", NULL, NULL, NULL);
+
     ifstream inputFile("Homo_sapiens.GRCh38.112.chr.gtf");
     string *commonlinedata = new string();
-    // string line;
-    // int linecount = 0;
-    // while (getline(inputFile, line)) {
-    //     linecount++;
-    //     if (linecount%100000 == 0){
-    //         cout<<"Processed "<<linecount<<" lines"<<endl;
-    //     }
-    //     // ignore first few lines beginning with #
-    //     if(line[0] == '#'){
-    //         continue;
-    //     }
-    //     // string linedata = processLine(line);
-    //     // rc = sqlite3_exec(db, linedata.c_str(), NULL, NULL, NULL);
-    // }
-    thread t1(myreadthread, &inputFile, commonlinedata);
-    thread t2(myreadthread, &inputFile, commonlinedata);
-    thread t3(myreadthread, &inputFile, commonlinedata);
-    thread t4(myreadthread, &inputFile, commonlinedata);
-    thread t5(myreadthread, &inputFile, commonlinedata);
-    thread t6(myreadthread, &inputFile, commonlinedata);
-    thread t7(myreadthread, &inputFile, commonlinedata);
-    thread t8(myreadthread, &inputFile, commonlinedata);
-    thread w(mywritethread, &db, commonlinedata);
 
-    t1.join(); cout<<"Thread1 finished execution"<<endl;
-    t2.join(); cout<<"Thread2 finished execution"<<endl;
-    t3.join(); cout<<"Thread3 finished execution"<<endl;
-    t4.join(); cout<<"Thread4 finished execution"<<endl;
-    t5.join(); cout<<"Thread5 finished execution"<<endl;
-    t6.join(); cout<<"Thread6 finished execution"<<endl;
-    t7.join(); cout<<"Thread7 finished execution"<<endl;
-    t8.join(); cout<<"Thread8 finished execution"<<endl;
-    w.join(); cout<<"Write Thread finished execution"<<endl;
-    rc = sqlite3_exec(db, "CREATE INDEX \"ix_human_index\"ON \"human\" (\"index\");", NULL, NULL, NULL);
+    vector<thread> readers;
+    for (int i = 0; i < num_threads; ++i) {
+        readers.emplace_back(myreadthread, &inputFile, commonlinedata);
+    }
+
+    thread writer(mywritethread, &db, commonlinedata);
+
+    for (auto &t : readers) {
+        t.join();
+        // cout << "Reader thread finished execution" << endl;
+    }
+
+    writer.join();
+    // cout << "Write Thread finished execution" << endl;
+
+    sqlite3_exec(db, "CREATE INDEX \"ix_human_index\" ON \"human\" (\"index\");", NULL, NULL, NULL);
     sqlite3_close(db);
 }
