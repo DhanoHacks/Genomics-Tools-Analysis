@@ -35,6 +35,8 @@ std::string processLine(const std::string &line) {
     for (size_t i = 0; i < 8; ++i) {
         data[keys[i]] = fields[i];
     }
+    // reduce End by 1 keeping the datatype as string
+    data["Start"] = std::to_string(std::stoi(data["Start"]) - 1);
 
     std::string attributes = fields[8];
     std::istringstream attrStream(attributes);
@@ -52,7 +54,7 @@ std::string processLine(const std::string &line) {
         }
     }
 
-    std::string sql = "INSERT INTO human2(";
+    std::string sql = "INSERT INTO human(";
     std::string keysStr, valuesStr;
 
     for (const auto &pair : data) {
@@ -143,14 +145,16 @@ void mywritethread(sqlite3 **db, string *commonlinedata) {
     }
 }
 
-int main() {
+int main(int argv, char **argc) {
     sqlite3 *db;
-    sqlite3_open(":memory:", &db);
-    sqlite3_exec(db, "DROP TABLE IF EXISTS human2;", NULL, NULL, NULL);
-    sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS \"human2\" (\"Chromosome\" TEXT, \"Source\" TEXT, \"Feature\" TEXT, \"Start\" INTEGER, \"End\" INTEGER, \"Score\" TEXT, \"Strand\" TEXT, \"Frame\" TEXT, \"gene_id\" TEXT, \"gene_version\" TEXT, \"gene_source\" TEXT, \"gene_biotype\" TEXT, \"transcript_id\" TEXT, \"transcript_version\" TEXT, \"transcript_source\" TEXT, \"transcript_biotype\" TEXT, \"tag\" TEXT, \"transcript_support_level\" TEXT, \"exon_number\" TEXT, \"exon_id\" TEXT, \"exon_version\" TEXT, \"gene_name\" TEXT, \"transcript_name\" TEXT, \"protein_id\" TEXT, \"protein_version\" TEXT, \"ccds_id\" TEXT);", NULL, NULL, NULL);
+    // database name is first argument
+    sqlite3_open(argc[1], &db);
+    sqlite3_exec(db, "DROP TABLE IF EXISTS human;", NULL, NULL, NULL);
+    sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS \"human\" (\"Chromosome\" TEXT, \"Source\" TEXT, \"Feature\" TEXT, \"Start\" INTEGER, \"End\" INTEGER, \"Score\" TEXT, \"Strand\" TEXT, \"Frame\" TEXT, \"gene_id\" TEXT, \"gene_version\" TEXT, \"gene_source\" TEXT, \"gene_biotype\" TEXT, \"transcript_id\" TEXT, \"transcript_version\" TEXT, \"transcript_source\" TEXT, \"transcript_biotype\" TEXT, \"tag\" TEXT, \"transcript_support_level\" TEXT, \"exon_number\" TEXT, \"exon_id\" TEXT, \"exon_version\" TEXT, \"gene_name\" TEXT, \"transcript_name\" TEXT, \"protein_id\" TEXT, \"protein_version\" TEXT, \"ccds_id\" TEXT);", NULL, NULL, NULL);
     sqlite3_exec(db, "PRAGMA journal_mode = OFF; PRAGMA synchronous = 0; PRAGMA cache_size = 1000000; PRAGMA locking_mode = EXCLUSIVE; PRAGMA temp_store = MEMORY;", NULL, NULL, NULL);
 
-    ifstream inputFile("Homo_sapiens.GRCh38.112.chr.gtf");
+    // input file is second argument
+    ifstream inputFile(argc[2]);
     string *commonlinedata = new string();
 
     vector<thread> readers;
