@@ -1,0 +1,12 @@
+Finished reading into pyranges object in time 103.2306456565857
+Finished reading into sql file in time 67.3927710056305
+Finished reading from sql to pyranges in time 53.50475215911865
+Time taken to count exons using pyranges is 8.4 s ± 8.73 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
+Time taken to count exons using sql is 1.91 s ± 31.1 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
+exon counts are identical
+Time taken to calculate total exon length using pyranges is 9.71 s ± 16.2 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
+Time taken to calculate total exon length using sql is 2.19 s ± 19.2 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
+exon lengths are identical
+Time taken to find chromosome with most transcripts using pyranges is 1.88 s ± 14.8 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
+Time taken to find chromosome with most transcripts using sql is 844 ms ± 13.5 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
+transcript counts are identical

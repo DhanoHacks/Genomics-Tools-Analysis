@@ -13,10 +13,10 @@ using namespace std;
 
 mutex gtf_mtx, sql_mutex;
 condition_variable cv_read, cv_write;
-int num_finished = 0, num_threads = 8;
+int num_finished = 0, num_threads;
 bool writer_should_exit = false;
 
-std::string processLine(const std::string &line) {
+std::string processLine(const std::string &line, string tablename) {
     std::istringstream lineStream(line);
     std::string token;
     std::vector<std::string> fields;
@@ -53,8 +53,7 @@ std::string processLine(const std::string &line) {
             data[key] = value;
         }
     }
-
-    std::string sql = "INSERT INTO human(";
+    std::string sql = "INSERT INTO " + tablename + " (";
     std::string keysStr, valuesStr;
 
     for (const auto &pair : data) {
@@ -70,7 +69,7 @@ std::string processLine(const std::string &line) {
     return sql;
 }
 
-void myreadthread(ifstream *inputFile, string *commonlinedata) {
+void myreadthread(ifstream *inputFile, string *commonlinedata, string tablename) {
     string line, linedata = "";
     vector<string> lines;
     int linecount = 0;
@@ -96,7 +95,7 @@ void myreadthread(ifstream *inputFile, string *commonlinedata) {
         }
 
         for (auto &line : lines) {
-            linedata += processLine(line);
+            linedata += processLine(line, tablename);
         }
         lines.clear();
 
@@ -149,17 +148,29 @@ int main(int argv, char **argc) {
     sqlite3 *db;
     // database name is first argument
     sqlite3_open(argc[1], &db);
-    sqlite3_exec(db, "DROP TABLE IF EXISTS human;", NULL, NULL, NULL);
-    sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS \"human\" (\"Chromosome\" TEXT, \"Source\" TEXT, \"Feature\" TEXT, \"Start\" INTEGER, \"End\" INTEGER, \"Score\" TEXT, \"Strand\" TEXT, \"Frame\" TEXT, \"gene_id\" TEXT, \"gene_version\" TEXT, \"gene_source\" TEXT, \"gene_biotype\" TEXT, \"transcript_id\" TEXT, \"transcript_version\" TEXT, \"transcript_source\" TEXT, \"transcript_biotype\" TEXT, \"tag\" TEXT, \"transcript_support_level\" TEXT, \"exon_number\" TEXT, \"exon_id\" TEXT, \"exon_version\" TEXT, \"gene_name\" TEXT, \"transcript_name\" TEXT, \"protein_id\" TEXT, \"protein_version\" TEXT, \"ccds_id\" TEXT);", NULL, NULL, NULL);
+    // table name is second argument
+    string tablename = argc[2];
+    string query = "DROP TABLE IF EXISTS " + tablename + ";";
+    sqlite3_exec(db, query.c_str(), NULL, NULL, NULL);
+    // check if tablename is equal to "human" or "mouse"
+    if(tablename == "human"){
+        query = "CREATE TABLE IF NOT EXISTS " + tablename + " (\"Chromosome\" TEXT, \"Source\" TEXT, \"Feature\" TEXT, \"Start\" INTEGER, \"End\" INTEGER, \"Score\" TEXT, \"Strand\" TEXT, \"Frame\" TEXT, \"gene_id\" TEXT, \"gene_version\" TEXT, \"gene_source\" TEXT, \"gene_biotype\" TEXT, \"transcript_id\" TEXT, \"transcript_version\" TEXT, \"transcript_source\" TEXT, \"transcript_biotype\" TEXT, \"tag\" TEXT, \"transcript_support_level\" TEXT, \"exon_number\" TEXT, \"exon_id\" TEXT, \"exon_version\" TEXT, \"gene_name\" TEXT, \"transcript_name\" TEXT, \"protein_id\" TEXT, \"protein_version\" TEXT, \"ccds_id\" TEXT);";
+    }
+    else if(tablename == "mouse"){
+        query = "CREATE TABLE IF NOT EXISTS " + tablename + " (\"Chromosome\" TEXT, \"Source\" TEXT, \"Feature\" TEXT, \"Start\" INTEGER, \"End\" INTEGER, \"Score\" TEXT, \"Strand\" TEXT, \"Frame\" TEXT, \"gene_id\" TEXT, \"gene_type\" TEXT, \"gene_name\" TEXT, \"level\" TEXT, \"mgi_id\" TEXT, \"havana_gene\" TEXT, \"transcript_id\" TEXT, \"transcript_type\" TEXT, \"transcript_name\" TEXT, \"transcript_support_level\" TEXT, \"tag\" TEXT, \"havana_transcript\" TEXT, \"exon_number\" TEXT, \"exon_id\" TEXT, \"protein_id\" TEXT, \"ccdsid\" TEXT, \"ont\" TEXT);";
+    }
+    sqlite3_exec(db, query.c_str(), NULL, NULL, NULL);
     sqlite3_exec(db, "PRAGMA journal_mode = OFF; PRAGMA synchronous = 0; PRAGMA cache_size = 1000000; PRAGMA locking_mode = EXCLUSIVE; PRAGMA temp_store = MEMORY;", NULL, NULL, NULL);
 
-    // input file is second argument
-    ifstream inputFile(argc[2]);
+    // input file is third argument
+    ifstream inputFile(argc[3]);
     string *commonlinedata = new string();
-
     vector<thread> readers;
+
+    // number of threads is fourth argument
+    num_threads = stoi(argc[4]);
     for (int i = 0; i < num_threads; ++i) {
-        readers.emplace_back(myreadthread, &inputFile, commonlinedata);
+        readers.emplace_back(myreadthread, &inputFile, commonlinedata, tablename);
     }
 
     thread writer(mywritethread, &db, commonlinedata);
@@ -172,6 +183,7 @@ int main(int argv, char **argc) {
     writer.join();
     // cout << "Write Thread finished execution" << endl;
 
-    sqlite3_exec(db, "CREATE INDEX \"ix_human_index\" ON \"human\" (\"index\");", NULL, NULL, NULL);
+    query = "CREATE INDEX \"ix_" + tablename + "_index\" ON \"" + tablename + "\" (\"index\");";
+    sqlite3_exec(db, query.c_str(), NULL, NULL, NULL);
     sqlite3_close(db);
 }
