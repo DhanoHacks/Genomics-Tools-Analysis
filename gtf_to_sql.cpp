@@ -185,5 +185,8 @@ int main(int argv, char **argc) {
 
     query = "CREATE INDEX \"ix_" + tablename + "_index\" ON \"" + tablename + "\" (\"index\");";
     sqlite3_exec(db, query.c_str(), NULL, NULL, NULL);
+    // create index on chromosome,strand
+    query = "CREATE INDEX \"ix_" + tablename + "_Chromosome_Strand\" ON \"" + tablename + "\" (\"Chromosome\", \"Strand\");";
+    sqlite3_exec(db, query.c_str(), NULL, NULL, NULL);
     sqlite3_close(db);
 }
