@@ -17,7 +17,7 @@ mutex gtf_mtx, sql_mutex;
 condition_variable cv_read, cv_write;
 int num_finished = 0, num_threads;
 bool writer_should_exit = false;
-int batch_len = 400000;
+int batch_len = 200000;
 
 std::string processLine(const std::string &line, string tablename) {
     std::istringstream lineStream(line);
@@ -153,7 +153,7 @@ void mywritethread(sqlite3 **db, string *commonlinedata, int *common_num_rows) {
             int num_rows = *common_num_rows;
             commonlinedata->clear();
             *common_num_rows = 0;
-            lock.unlock();
+            cv_read.notify_all();
 
             // store time taken to push data to db
             start = chrono::high_resolution_clock::now();
@@ -161,9 +161,6 @@ void mywritethread(sqlite3 **db, string *commonlinedata, int *common_num_rows) {
             end = chrono::high_resolution_clock::now();
             duration = chrono::duration_cast<chrono::milliseconds>(end - start);
             cout << "Pushed " << num_rows << " lines to db in time " << duration.count() << "ms" << endl;
-
-            lock.lock();
-            cv_read.notify_all();
         }
 
         if (writer_should_exit && commonlinedata->empty()) {
@@ -212,11 +209,16 @@ int main(int argv, char **argc) {
     writer.join();
     // cout << "Write Thread finished execution" << endl;
 
+    // store time taken to create indices
+    auto start = chrono::high_resolution_clock::now();
     query = "CREATE INDEX \"ix_" + tablename + "_index\" ON \"" + tablename + "\" (\"index\");";
     sqlite3_exec(db, query.c_str(), NULL, NULL, NULL);
     // create index on chromosome,strand
     query = "CREATE INDEX \"ix_" + tablename + "_Chromosome_Strand\" ON \"" + tablename + "\" (\"Chromosome\", \"Strand\");";
     sqlite3_exec(db, query.c_str(), NULL, NULL, NULL);
+    auto end = chrono::high_resolution_clock::now();
+    auto duration = chrono::duration_cast<chrono::milliseconds>(end - start);
+    cout << "Time taken to create indices: " << duration.count() << "ms" << endl;
     // sqlite3_close(db);
 }
 
