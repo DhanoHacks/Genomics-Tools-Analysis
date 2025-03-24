@@ -9,12 +9,15 @@
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+// add library for timing purposes (ms)
+#include <chrono>
 using namespace std;
 
 mutex gtf_mtx, sql_mutex;
 condition_variable cv_read, cv_write;
 int num_finished = 0, num_threads;
 bool writer_should_exit = false;
+int batch_len = 400000;
 
 std::string processLine(const std::string &line, string tablename) {
     std::istringstream lineStream(line);
@@ -69,15 +72,18 @@ std::string processLine(const std::string &line, string tablename) {
     return sql;
 }
 
-void myreadthread(ifstream *inputFile, string *commonlinedata, string tablename) {
+void myreadthread(ifstream *inputFile, string *commonlinedata, int *common_num_rows, string tablename) {
     string line, linedata = "";
     vector<string> lines;
+    int num_rows = 0;
     int linecount = 0;
     bool eof = false;
 
     while (!eof) {
         gtf_mtx.lock();
-        for (int i = 0; i < 10; i++) {
+        // store time taken to read data
+        auto start = chrono::high_resolution_clock::now();
+        for (int i = 0; i < 10000; i++) {
             if (!getline(*inputFile, line)) {
                 eof = true;
                 break;
@@ -86,26 +92,37 @@ void myreadthread(ifstream *inputFile, string *commonlinedata, string tablename)
                 continue;
             }
             lines.push_back(line);
+            num_rows++;
         }
+        auto end = chrono::high_resolution_clock::now();
+        auto duration = chrono::duration_cast<chrono::milliseconds>(end - start);
+        cout << "Time taken to read data: " << duration.count() << "ms" << endl;
         gtf_mtx.unlock();
 
         linecount += lines.size();
         if (linecount % 100000 == 0) {
-            // cout << "Processed " << linecount << " lines" << endl;
+            cout << "Processed " << linecount << " lines" << endl;
         }
-
+        
+        // store time taken to process data
+        start = chrono::high_resolution_clock::now();
         for (auto &line : lines) {
             linedata += processLine(line, tablename);
         }
         lines.clear();
+        end = chrono::high_resolution_clock::now();
+        duration = chrono::duration_cast<chrono::milliseconds>(end - start);
+        cout << "Time taken to process data: " << duration.count() << "ms" << endl;
 
         unique_lock<mutex> lock(sql_mutex);
-        cv_read.wait(lock, [&]() { return commonlinedata->length() < 80 || writer_should_exit; });
+        cv_read.wait(lock, [&]() { return *common_num_rows < batch_len || writer_should_exit; });
 
         *commonlinedata += linedata;
+        *common_num_rows += num_rows;
+        num_rows = 0;
         linedata.clear();
 
-        if (commonlinedata->length() >= 80) {
+        if (*common_num_rows >= batch_len) {
             cv_write.notify_one();
         }
     }
@@ -121,18 +138,29 @@ void myreadthread(ifstream *inputFile, string *commonlinedata, string tablename)
     }
 }
 
-void mywritethread(sqlite3 **db, string *commonlinedata) {
+void mywritethread(sqlite3 **db, string *commonlinedata, int *common_num_rows) {
     while (true) {
         unique_lock<mutex> lock(sql_mutex);
-        cv_write.wait(lock, [&]() { return commonlinedata->length() >= 80 || writer_should_exit; });
+        cv_write.wait(lock, [&]() { return *common_num_rows >= batch_len || writer_should_exit; });
 
         if (!commonlinedata->empty()) {
+            // store time taken to move data
+            auto start = chrono::high_resolution_clock::now();
             string data_to_write = move(*commonlinedata);
+            auto end = chrono::high_resolution_clock::now();
+            auto duration = chrono::duration_cast<chrono::milliseconds>(end - start);
+            cout << "Time taken to move data: " << duration.count() << "ms" << endl;
+            int num_rows = *common_num_rows;
             commonlinedata->clear();
+            *common_num_rows = 0;
             lock.unlock();
 
+            // store time taken to push data to db
+            start = chrono::high_resolution_clock::now();
             sqlite3_exec(*db, data_to_write.c_str(), NULL, NULL, NULL);
-            // cout << "Pushed " << data_to_write.length() << " bytes to db" << endl;
+            end = chrono::high_resolution_clock::now();
+            duration = chrono::duration_cast<chrono::milliseconds>(end - start);
+            cout << "Pushed " << num_rows << " lines to db in time " << duration.count() << "ms" << endl;
 
             lock.lock();
             cv_read.notify_all();
@@ -165,15 +193,16 @@ int main(int argv, char **argc) {
     // input file is third argument
     ifstream inputFile(argc[3]);
     string *commonlinedata = new string();
+    int *common_num_rows = new int(0);
     vector<thread> readers;
 
     // number of threads is fourth argument
     num_threads = stoi(argc[4]);
     for (int i = 0; i < num_threads; ++i) {
-        readers.emplace_back(myreadthread, &inputFile, commonlinedata, tablename);
+        readers.emplace_back(myreadthread, &inputFile, commonlinedata, common_num_rows, tablename);
     }
 
-    thread writer(mywritethread, &db, commonlinedata);
+    thread writer(mywritethread, &db, commonlinedata, common_num_rows);
 
     for (auto &t : readers) {
         t.join();
@@ -188,5 +217,16 @@ int main(int argv, char **argc) {
     // create index on chromosome,strand
     query = "CREATE INDEX \"ix_" + tablename + "_Chromosome_Strand\" ON \"" + tablename + "\" (\"Chromosome\", \"Strand\");";
     sqlite3_exec(db, query.c_str(), NULL, NULL, NULL);
-    sqlite3_close(db);
+    // sqlite3_close(db);
+}
+
+extern "C" {
+    void run_gtf_to_sql(const char* db_name, const char* table_name, const char* input_file, int num_threads) {
+        // Convert arguments to argc/argv format
+        const char* argv[] = {"gtf_to_sql", db_name, table_name, input_file, to_string(num_threads).c_str()};
+        int argc = 5;
+
+        // Call the main function
+        main(argc, const_cast<char**>(argv));
+    }
 }

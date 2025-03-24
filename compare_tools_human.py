@@ -3,17 +3,28 @@ import pyranges as pr
 import pandas as pd
 import numpy as np
 import sqlite3
-import gffutils
+# import gffutils
 import time
-import pybedtools
+# import pybedtools
 import os
 from IPython import get_ipython
+from multiprocessing import Pool
+import ctypes
 
 # %%
 gtf_file_name = "Homo_sapiens.GRCh38.112.chr.gtf"
 # gtf_file_name = "/home/U210050044/data/DH607-project/Homo_sapiens.GRCh38.112.chr.gtf"
-sql_db_name = "db.sqlite3"
+# sql_db_name = "db-human.sqlite3"
+sql_db_name = "file:memdb1?mode=memory&cache=shared"
 results_file_name = "results_human.txt"
+lib = ctypes.CDLL("./gtf_to_sql.so")
+# Define the function signature
+lib.run_gtf_to_sql.argtypes = [
+    ctypes.c_char_p,  # db_name
+    ctypes.c_char_p,  # table_name
+    ctypes.c_char_p,  # input_file
+    ctypes.c_int,     # num_threads
+]
 
 # %%
 results_file = open(results_file_name,"w")
@@ -28,18 +39,19 @@ results_file.write(f"Finished reading into pyranges object in time {end_time-sta
 # start_time = time.time()
 # human_db = gffutils.create_db("/home/U210050044/data/DH607-project/Homo_sapiens.GRCh38.112.chr.gtf","/home/U210050044/data/DH607-project/human_db.sqlite3",disable_infer_genes=True,disable_infer_transcripts=True, force=True)
 # end_time = time.time()
-# print(f"Finished converting gtf to sql db in time {end_time-start_time}")
+# results_file.write(f"Finished converting gtf to sql db in time {end_time-start_time}")
 
 # %%
 # # Open the database
 # human_db = gffutils.FeatureDB("/home/U210050044/data/DH607-project/human_db.sqlite3")
 
 # %%
-os.system("g++ gtf_to_sql.cpp -lsqlite3")
+# Call the function
+os.system("g++ -std=c++11 -shared -fPIC -o gtf_to_sql.so gtf_to_sql.cpp -lsqlite3 -pthread")
 start_time = time.time()
-os.system(f"./a.out {sql_db_name} human {gtf_file_name} 8")
+lib.run_gtf_to_sql(sql_db_name.encode("utf-8"), "human".encode("utf-8"), gtf_file_name.encode("utf-8"), 8)
 end_time = time.time()
-results_file.write(f"Finished reading into sql file in time {end_time-start_time}\n")
+results_file.write(f"Finished reading into sql db in time {end_time-start_time}\n")
 
 # %%
 conn = sqlite3.connect(sql_db_name)
@@ -164,17 +176,14 @@ if transcript_counts_pr == transcript_counts_sql["Chromosome"].values[0]:
 else:
     results_file.write("transcript counts are not identical\n")
 
-# %%
-results_file.close()
-
 # %% [markdown]
 # # Interval Arithmetic
 # ### Query 1: Merging Overlapping Exon Intervals
 
 # %%
-# Combine all overlapping exon intervals into contiguous regions
 # Using pyranges
-# %timeit exon_intervals_pr = human_gr[human_gr.Feature == "exon"].merge(strand=False)
+time = get_ipython().run_line_magic("timeit",'-o exon_intervals_pr = human_gr[human_gr.Feature == "exon"].merge(strand=True)')
+results_file.write(f"Time taken to merge exons using pyranges is {time}\n")
 
 # %%
 # # using gffutils TODO: run
@@ -188,19 +197,42 @@ results_file.close()
 # %timeit exon_intervals_gff = exon_intervals_gffutls()
 
 # %%
-# # using sql
-# def find_exon_intervals_sql():
-#     exon_intervals = pd.read_sql_query("SELECT Chromosome, Start, End FROM human WHERE Feature = 'exon' ORDER BY Chromosome, Start", conn)
-#     return pybedtools.BedTool.from_dataframe(exon_intervals).merge()
-# %timeit exon_intervals_sql = find_exon_intervals_sql()
+# using sql
+def get_exon_intervals_sql(chrom_strand):
+    chrom, strand = chrom_strand
+    exon_intervals_sql = pd.read_sql_query(f"SELECT Start, End FROM human WHERE Feature = 'exon' AND Chromosome = '{chrom}' AND Strand = '{strand}'", conn)
+    exon_intervals_sql = pr.methods.merge._merge(exon_intervals_sql, chromosome=chrom, count=None, strand=strand)
+    return exon_intervals_sql
+
+def get_exon_intervals_sql_multi():
+    chrom_strand_tup = pd.read_sql_query("SELECT DISTINCT Chromosome, Strand FROM human", conn)
+    chrom_strand_tup = list(zip(chrom_strand_tup["Chromosome"], chrom_strand_tup["Strand"]))
+    with Pool(8) as p:
+        exon_intervals_sql = p.map(get_exon_intervals_sql, chrom_strand_tup)
+    exon_intervals_sql = pd.concat(exon_intervals_sql).sort_values(["Chromosome", "Strand", "Start", "End"]).reset_index(drop=True)
+    return exon_intervals_sql
+
+# %%
+time = get_ipython().run_line_magic("timeit",'-o exon_intervals_sql = get_exon_intervals_sql_multi()')
+results_file.write(f"Time taken to merge exons using sql is {time}\n")
+
+# %%
+# check if exon_intervals_pr and exon_intervals_sql are identical
+exon_intervals_pr = human_gr[human_gr.Feature == "exon"].merge(strand=True).df.sort_values(["Chromosome", "Strand", "Start", "End"]).reset_index(drop=True)
+exon_intervals_sql = get_exon_intervals_sql_multi()
+if exon_intervals_pr.equals(exon_intervals_sql):
+    results_file.write("exon intervals are identical\n")
+else:
+    results_file.write("exon intervals are not identical\n")
 
 # %% [markdown]
 # ### Query 2: Finding Overlaps with a Specific Interval
-# Find all gene features that overlap a given interval chr1:100000-200000
+# Find all gene features that overlap a given interval chr1:100000-200000 + strand
 
 # %%
 # Using pyranges
-# %timeit overlapping_genes_pr = human_gr[human_gr.Feature == "gene"].overlap(pr.from_dict({"Chromosome": ["1"], "Start": [100000], "End": [200000]}), strand=False)
+time = get_ipython().run_line_magic("timeit",'-o overlapping_genes_pr = human_gr[human_gr.Feature == "gene"].overlap(pr.from_dict({"Chromosome": ["1"], "Start": [100000], "End": [200000], "Strand": ["+"]}), strandedness="same")')
+results_file.write(f"Time taken to find overlapping genes using pyranges is {time}\n")
 
 # %%
 # # using gffutils TODO: run
@@ -215,12 +247,38 @@ results_file.close()
 # %timeit overlapping_genes_gff = overlapping_genes_gffutls()
 
 # %%
-# # using sql
-# def find_overlapping_genes_sql():
-#     exon_intervals_overlapping = pybedtools.BedTool.from_dataframe(pd.DataFrame({"Chromosome": ["1"], "Start": [100000], "End": [200000]}))
-#     exon_intervals = pd.read_sql_query("SELECT Chromosome, Start, End FROM human WHERE Feature = 'exon' ORDER BY Chromosome, Start", conn)
-#     return exon_intervals_overlapping.window(pybedtools.BedTool.from_dataframe(exon_intervals).merge(), w=0)
-# %timeit overlapping_genes_sql = find_overlapping_genes_sql()
+# using sql
+other_genes_all = pd.DataFrame({"Chromosome": ["1"], "Start": [100000], "End": [200000], "Strand": ["+"]})
+def get_overlapping_genes_sql(chrom_strand):
+    chrom, strand = chrom_strand
+    self_genes_sql = pd.read_sql_query(f"SELECT * FROM human WHERE Feature = 'gene' AND Chromosome = '{chrom}' AND Strand = '{strand}'", conn)
+    other_genes = other_genes_all[(other_genes_all["Chromosome"] == chrom) & (other_genes_all["Strand"] == strand)]
+    overlapping_genes_sql = pr.methods.intersection._overlap(self_genes_sql, other_genes, how="first")
+    return overlapping_genes_sql
+
+def get_overlapping_genes_sql_multi():
+    chrom_strand_tup = pd.read_sql_query("SELECT DISTINCT Chromosome, Strand FROM human", conn)
+    chrom_strand_tup = list(zip(chrom_strand_tup["Chromosome"], chrom_strand_tup["Strand"]))
+    with Pool(8) as p:
+        overlapping_genes_sql = p.map(get_overlapping_genes_sql, chrom_strand_tup)
+    overlapping_genes_sql = pd.concat(overlapping_genes_sql) #.sort_values(["Chromosome", "Strand", "Start", "End"]).reset_index(drop=True)
+    return overlapping_genes_sql
+
+# %%
+time = get_ipython().run_line_magic("timeit",'-o overlapping_genes_sql = get_overlapping_genes_sql_multi()')
+results_file.write(f"Time taken to find overlapping genes using sql is {time}\n")
+
+# %%
+# check if overlapping_genes_pr and overlapping_genes_sql are identical
+overlapping_genes_pr = human_gr[human_gr.Feature == "gene"].overlap(pr.from_dict({"Chromosome": ["1"], "Start": [100000], "End": [200000], "Strand": ["+"]}), strandedness="same")
+overlapping_genes_sql = get_overlapping_genes_sql_multi()
+overlapping_genes_sql = overlapping_genes_sql.sort_values(["Chromosome", "Strand", "Start", "End"]).reset_index(drop=True)
+overlapping_genes_pr = overlapping_genes_pr.df.sort_values(["Chromosome", "Strand", "Start", "End"]).reset_index(drop=True)
+diff = overlapping_genes_pr.compare(overlapping_genes_sql)
+if diff.empty:
+    results_file.write("overlapping genes are identical\n")
+else:
+    results_file.write("overlapping genes are not identical\n")
 
 # %% [markdown]
 # ### Query 3: Subtracting Intervals
@@ -254,6 +312,7 @@ results_file.close()
 # %timeit subtracted_intervals_sql = find_subtracted_intervals_sql()
 
 # %%
-
+results_file.close()
+conn.close()
 
 

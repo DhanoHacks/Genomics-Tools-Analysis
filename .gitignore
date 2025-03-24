@@ -5,3 +5,5 @@ schema.txt
 __pycache__/
 .vscode/
 .venv/
+log*.txt
+*.so
