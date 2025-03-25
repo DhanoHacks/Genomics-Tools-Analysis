@@ -219,7 +219,12 @@ int main(int argv, char **argc) {
     auto end = chrono::high_resolution_clock::now();
     auto duration = chrono::duration_cast<chrono::milliseconds>(end - start);
     cout << "Time taken to create indices: " << duration.count() << "ms" << endl;
-    // sqlite3_close(db);
+    // only close if database location is not in memory, i.e. if it ends with .sqlite3 then close it
+    // check if argc[1] ends with .sqlite3
+    string db_name = argc[1];
+    if(db_name.substr(db_name.find_last_of(".") + 1) == "sqlite3"){
+        sqlite3_close(db);
+    }
 }
 
 extern "C" {
