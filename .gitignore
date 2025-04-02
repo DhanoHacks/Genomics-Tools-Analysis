@@ -1,5 +1,6 @@
 schema.txt
 *.sqlite3
+*.duckdb
 *.gtf
 *.out
 __pycache__/
