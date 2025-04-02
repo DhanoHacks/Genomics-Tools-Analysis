@@ -26,15 +26,15 @@ def plot_stacked_bar(ax, pyranges_time, sql_write_time, sql_read_time, title):
 
 def main():
     # Human data
-    pyranges_read_h = 103.23
-    sql_write_h = 67.39
-    sql_read_h = 53.50
-    exons_pyranges_h = 8.4
-    exons_sql_h = 1.91
-    exon_length_pyranges_h = 9.71
-    exon_length_sql_h = 2.19
-    transcripts_pyranges_h = 1.88
-    transcripts_sql_h = 0.844
+    pyranges_read_h = 63.963
+    sql_write_h = 98.48
+    sql_read_h = 30.44
+    exons_pyranges_h = 4.56
+    exons_sql_h = 1.45
+    exon_length_pyranges_h = 5.27
+    exon_length_sql_h = 1.64
+    transcripts_pyranges_h = 1.01
+    transcripts_sql_h = 0.699
     
     # Mouse data
     pyranges_read_m = 67.24
@@ -56,7 +56,7 @@ def main():
     plot_bars(axs[1], ['Count Exons', 'Total Exon Length', 'Most Transcripts'],
               [exons_pyranges_h, exon_length_pyranges_h, transcripts_pyranges_h],
               [exons_sql_h, exon_length_sql_h, transcripts_sql_h],
-              'Computation Times (Human Genome)')
+              'Aggregate Queries (Human Genome)')
     
     plt.tight_layout()
     plt.savefig("results_human.png")
@@ -70,7 +70,7 @@ def main():
     plot_bars(axs[1], ['Count Exons', 'Total Exon Length', 'Most Transcripts'],
               [exons_pyranges_m, exon_length_pyranges_m, transcripts_pyranges_m],
               [exons_sql_m, exon_length_sql_m, transcripts_sql_m],
-              'Computation Times (Mouse Genome)')
+              'Aggregate Queries (Mouse Genome)')
     
     plt.tight_layout()
     plt.savefig("results_mouse.png")
