@@ -46,12 +46,22 @@ def parse_results_file(path):
     results['sql_read'] = extract_float(r'Finished reading from sql to pyranges in time ([\d.]+)', text)
 
     def get_pair(query, label):
-        base = fr'Time taken to {query} using {label} is ([\d.]+|\d+) (ms|s) ± ([\d.]+|\d+) (ms|s)'
+        base = fr'Time taken to {query} using {label} is ([\d.]+|\d+) (μs|ms|s) ± ([\d.]+|\d+) (μs|ms|s)'
         m = re.search(base, text)
         if not m:
-            raise ValueError(f"Could not find timing for {query} using {label}")
-        time = float(m.group(1)) / 1000 if m.group(2) == 'ms' else float(m.group(1))
-        err = float(m.group(3)) / 1000 if m.group(4) == 'ms' else float(m.group(3))
+            raise ValueError(f"Could not find timing for {query} using {label} using pattern {base}")
+        if m.group(2) == 'μs':
+            time = float(m.group(1)) / 1e6
+        elif m.group(2) == 'ms':
+            time = float(m.group(1)) / 1000
+        else:
+            time = float(m.group(1))
+        if m.group(4) == 'μs':
+            err = float(m.group(3)) / 1e6
+        elif m.group(4) == 'ms':
+            err = float(m.group(3)) / 1000
+        else:
+            err = float(m.group(3))
         return time, err
 
     for query_key, query_phrase in {
