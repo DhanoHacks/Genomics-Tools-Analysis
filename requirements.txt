@@ -3,3 +3,4 @@ pandas
 numpy
 gffutils
 pybedtools
+ray
