@@ -1,11 +1,9 @@
 import sqlite3
 import sys
 import time
-import os
 import ray
-
-BATCH_LEN = 100000
-CHUNK_SIZE = 2000
+import threading
+import queue
 
 def process_line(line, tablename):
     """
@@ -74,7 +72,7 @@ def process_batch(lines_batch, table_name):
     # Return the accumulated SQL statements for this batch
     return sql_statements
 
-def run_gtf_to_sql(db_name, table_name, input_file):
+def run_gtf_to_sql(db_name, table_name, input_file, batch_size=1000000, chunk_size=8000):
     """
     Main function to process a GTF file and write its data into an SQLite database.
     
@@ -82,9 +80,12 @@ def run_gtf_to_sql(db_name, table_name, input_file):
         db_name    : Name (path) of the SQLite database file.
         table_name : The name of the table ("human" or "mouse").
         input_file : GTF file to process.
+        batch_size : Number of bytes/characters to read from the file at once. Default is 1000000.
+        chunk_size : Number of lines to process in each batch. Default is 8000.
     """
-    # Connect to the SQLite database
-    conn = sqlite3.connect(db_name)
+    # Connect to the SQLite database.
+    # Set check_same_thread=False so that the connection can be used by multiple threads.
+    conn = sqlite3.connect(db_name, check_same_thread=False)
     cur = conn.cursor()
 
     # Drop the table if it exists.
@@ -168,44 +169,66 @@ def run_gtf_to_sql(db_name, table_name, input_file):
     """)
     conn.commit()
 
-    # Open and process the input file
-    with open(input_file, "r") as f:
-        lines = f.readlines()
-    linecount = 0
-    # Use ray to process lines in parallel
-    while True:
-        start_time = time.time()
-        futures = []
-        for i in range(linecount, linecount+BATCH_LEN, CHUNK_SIZE):
-            # Each batch processes CHUNK_SIZE lines at once.
-            lines_batch = lines[i:i+CHUNK_SIZE]
-            futures.append(process_batch.remote(lines_batch, table_name))
-        linecount += BATCH_LEN
-        elapsed = time.time() - start_time
-        print(f"Submitted {BATCH_LEN} lines to ray in {elapsed*1000:.0f}ms")
-        
-        # Wait for all futures to complete and collect the results.
-        start_time = time.time()
-        sql_statements = ray.get(futures)
-        elapsed = time.time() - start_time
-        print(f"Processed {BATCH_LEN} lines in {elapsed*1000:.0f}ms")
-        
-        # Flatten the list of SQL statements into a single string.
-        start_time = time.time()
-        sql_statements = "".join(sql_statements)
-        elapsed = time.time() - start_time
-        print(f"Flattened SQL statements in {elapsed*1000:.0f}ms")
-        
-        # Execute the SQL statements in a single transaction.
-        start_time = time.time()
-        cur.executescript(sql_statements)
-        conn.commit()
-        elapsed = time.time() - start_time
-        print(f"Pushed {BATCH_LEN} lines to db in {elapsed*1000:.0f}ms")
-        
-        # Check if we have reached the end of the file
-        if linecount >= len(lines):
-            break
+    # Create a shared queue for SQL batches and an event to signal when reading is done.
+    sql_queue = queue.Queue()
+    read_done = threading.Event()
+
+    # Writer thread function: waits for SQL batches and executes them.
+    def writer_thread_func():
+        while not (read_done.is_set() and sql_queue.empty()):
+            try:
+                batch_sql_statements = sql_queue.get(timeout=1)
+            except queue.Empty:
+                continue
+            start_time = time.time()
+            cur.executescript(batch_sql_statements)
+            conn.commit()
+            elapsed = time.time() - start_time
+            print(f"Pushed a batch to SQLite in {elapsed*1000:.0f}ms")
+
+    # Reader thread function: reads the file and puts processed batches into the queue.
+    def reader_thread_func():
+        with open(input_file, "r") as f:
+            while True:
+                # Read a chunk of lines from the file
+                lines = f.readlines(batch_size)
+                if not lines:
+                    break
+                start_time = time.time()
+                futures = []
+                for i in range(0, len(lines), chunk_size):
+                    # Each batch processes CHUNK_SIZE lines at once.
+                    lines_batch = lines[i:i+chunk_size]
+                    futures.append(process_batch.remote(lines_batch, table_name))
+                elapsed = time.time() - start_time
+                print(f"Submitted {len(lines)} lines to ray in {elapsed*1000:.0f}ms")
+                
+                # Wait for all futures to complete and collect the results.
+                start_time = time.time()
+                sql_statements = ray.get(futures)
+                elapsed = time.time() - start_time
+                print(f"Processed {len(lines)} lines in {elapsed*1000:.0f}ms")
+                
+                # Flatten the list of SQL statements into a single string.
+                start_time = time.time()
+                batch_sql_statements = "".join(sql_statements)
+                elapsed = time.time() - start_time
+                print(f"Flattened SQL statements in {elapsed*1000:.0f}ms")
+                
+                # Push the batch of SQL statements to the queue
+                sql_queue.put(batch_sql_statements)
+        read_done.set()
+        print("Reader thread finished reading file")
+
+    # Create and start the reader and writer threads.
+    reader_thread = threading.Thread(target=reader_thread_func)
+    writer_thread = threading.Thread(target=writer_thread_func)
+    reader_thread.start()
+    writer_thread.start()
+
+    # Wait for both threads to finish
+    reader_thread.join()
+    writer_thread.join()
 
     # Create indices and time the operation.
     start_time = time.time()
