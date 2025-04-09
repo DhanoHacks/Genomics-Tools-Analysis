@@ -72,7 +72,7 @@ def process_batch(lines_batch, table_name):
     # Return the accumulated SQL statements for this batch
     return sql_statements
 
-def run_gtf_to_sql(db_name, table_name, input_file, batch_size=1000000, chunk_size=8000):
+def run_gtf_to_sql(db_name, table_name, input_file, batch_size=100000000, chunk_size=8000):
     """
     Main function to process a GTF file and write its data into an SQLite database.
     
