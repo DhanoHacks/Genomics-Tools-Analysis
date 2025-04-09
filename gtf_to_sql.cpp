@@ -14,7 +14,7 @@
 using namespace std;
 
 mutex gtf_mtx, sql_mutex;
-condition_variable cv_read, cv_write;
+condition_variable cv_write;
 int num_finished = 0, num_threads;
 bool writer_should_exit = false;
 int batch_len = 200000;
@@ -114,11 +114,13 @@ void myreadthread(ifstream *inputFile, string *commonlinedata, int *common_num_r
         duration = chrono::duration_cast<chrono::milliseconds>(end - start);
         cout << "Time taken to process data: " << duration.count() << "ms" << endl;
 
-        unique_lock<mutex> lock(sql_mutex);
-        cv_read.wait(lock, [&]() { return *common_num_rows < batch_len || writer_should_exit; });
+        // unique_lock<mutex> lock(sql_mutex);
+        // cv_read.wait(lock, [&]() { return *common_num_rows < batch_len || writer_should_exit; });
+        sql_mutex.lock();
 
         *commonlinedata += linedata;
         *common_num_rows += num_rows;
+        sql_mutex.unlock();
         num_rows = 0;
         linedata.clear();
 
@@ -127,14 +129,19 @@ void myreadthread(ifstream *inputFile, string *commonlinedata, int *common_num_r
         }
     }
 
-    unique_lock<mutex> lock(sql_mutex);
+    // unique_lock<mutex> lock(sql_mutex);
+    sql_mutex.lock();
     if (!linedata.empty()) {
         *commonlinedata += linedata;
     }
     num_finished++;
     if (num_finished == num_threads) {
         writer_should_exit = true;
+        sql_mutex.unlock();
         cv_write.notify_one();
+    }
+    else {
+        sql_mutex.unlock();
     }
 }
 
@@ -153,7 +160,7 @@ void mywritethread(sqlite3 **db, string *commonlinedata, int *common_num_rows) {
             int num_rows = *common_num_rows;
             commonlinedata->clear();
             *common_num_rows = 0;
-            cv_read.notify_all();
+            lock.unlock();
 
             // store time taken to push data to db
             start = chrono::high_resolution_clock::now();

@@ -18,6 +18,7 @@ gtf_file_name = "Homo_sapiens.GRCh38.112.chr.gtf"
 sql_db_name = "file:humangtf?mode=memory&cache=shared"
 results_file_name = "results_human.txt"
 os.system("g++ -std=c++11 -shared -fPIC -o gtf_to_sql.so gtf_to_sql.cpp -lsqlite3 -pthread")
+# os.system("g++ -std=c++11 -shared -fPIC -o gtf_to_sql.so gtf_to_sql.cpp -lduckdb -pthread -lstdc++")
 lib = ctypes.CDLL("./gtf_to_sql.so")
 # Define the function signature
 lib.run_gtf_to_sql.argtypes = [
@@ -48,9 +49,9 @@ start_time = time.time()
 lib.run_gtf_to_sql(sql_db_name.encode("utf-8"), "human".encode("utf-8"), gtf_file_name.encode("utf-8"), 8)
 end_time = time.time()
 if OUTPUT_MODE == "file":
-    results_file.write(f"Finished reading into sql db in time {end_time-start_time}\n")
+    results_file.write(f"Finished writing into sql db in time {end_time-start_time}\n")
 else:
-    print(f"Finished reading into sql db in time {end_time-start_time}")
+    print(f"Finished writing into sql db in time {end_time-start_time}")
 
 # %%
 conn = sqlite3.connect(sql_db_name)
@@ -152,7 +153,7 @@ else:
 
 # %%
 # verify if transcript_counts_pr and transcript_counts_sql are identical
-transcript_counts_pr = human_gr2[human_gr2.Feature == "transcript"].df["Chromosome"].value_counts().idxmax()
+transcript_counts_pr = human_gr[human_gr.Feature == "transcript"].df["Chromosome"].value_counts().idxmax()
 transcript_counts_sql = pd.read_sql_query("SELECT Chromosome, COUNT(*) as transcript_count FROM human WHERE Feature = 'transcript' GROUP BY Chromosome ORDER BY transcript_count DESC LIMIT 1", conn)
 if transcript_counts_pr == transcript_counts_sql["Chromosome"].values[0]:
     results_text = "transcript counts are identical"
@@ -213,11 +214,11 @@ else:
 
 # %% [markdown]
 # ### Query 2: Finding Overlaps with a Specific Interval
-# Find all gene features that overlap a given interval chr1:100000-200000 + strand
+# Find all gene features that overlap a given interval chr1:1000000-2000000 + strand
 
 # %%
 # Using pyranges
-time = get_ipython().run_line_magic("timeit",'-o overlapping_genes_pr = human_gr[human_gr.Feature == "gene"].overlap(pr.from_dict({"Chromosome": ["1"], "Start": [100000], "End": [200000], "Strand": ["+"]}), strandedness="same")')
+time = get_ipython().run_line_magic("timeit",'-o overlapping_genes_pr = human_gr[human_gr.Feature == "gene"].overlap(pr.from_dict({"Chromosome": ["1"], "Start": [1000000], "End": [2000000], "Strand": ["+"]}), strandedness="same")')
 if OUTPUT_MODE == "file":
     results_file.write(f"Time taken to find overlapping genes using pyranges is {time}\n")
 else:
@@ -225,7 +226,7 @@ else:
 
 # %%
 # using sql
-other_genes_all = pd.DataFrame({"Chromosome": ["1"], "Start": [100000], "End": [200000], "Strand": ["+"]})
+other_genes_all = pd.DataFrame({"Chromosome": ["1"], "Start": [1000000], "End": [2000000], "Strand": ["+"]})
 def get_overlapping_genes_sql(chrom_strand):
     chrom, strand = chrom_strand
     self_genes_sql = pd.read_sql_query(f"SELECT * FROM human WHERE Feature = 'gene' AND Chromosome = '{chrom}' AND Strand = '{strand}'", conn)
@@ -250,7 +251,7 @@ else:
 
 # %%
 # check if overlapping_genes_pr and overlapping_genes_sql are identical
-overlapping_genes_pr = human_gr[human_gr.Feature == "gene"].overlap(pr.from_dict({"Chromosome": ["1"], "Start": [100000], "End": [200000], "Strand": ["+"]}), strandedness="same")
+overlapping_genes_pr = human_gr[human_gr.Feature == "gene"].overlap(pr.from_dict({"Chromosome": ["1"], "Start": [1000000], "End": [2000000], "Strand": ["+"]}), strandedness="same")
 overlapping_genes_sql = get_overlapping_genes_sql_multi()
 overlapping_genes_sql = overlapping_genes_sql.sort_values(["Chromosome", "Strand", "Start", "End"]).reset_index(drop=True)
 overlapping_genes_pr = overlapping_genes_pr.df.sort_values(["Chromosome", "Strand", "Start", "End"]).reset_index(drop=True)
@@ -310,18 +311,17 @@ else:
 
 # %%
 # check if subtracted_intervals_pr and subtracted_intervals_sql are identical
-# subtracted_intervals_pr = human_gr[human_gr.Feature == "exon"].subtract(pr.from_dict({"Chromosome": ["1", "1"],"Start": [15000000, 20000000],"End": [16000000, 21000000], "Strand": ["+", "-"]}))
-# subtracted_intervals_sql = get_subtracted_intervals_sql_multi()
-# subtracted_intervals_sql.to_csv("subtracted_intervals_sql.csv", index=False)
-# subtracted_intervals_pr.df.to_csv("subtracted_intervals_pr.csv", index=False)
-# os.system("cat subtracted_intervals_sql.csv | sort > subtracted_intervals_sql_sorted.csv")
-# os.system("cat subtracted_intervals_pr.csv | sort > subtracted_intervals_pr_sorted.csv")
-# diff = os.popen("diff subtracted_intervals_sql_sorted.csv subtracted_intervals_pr_sorted.csv").read()
-# if diff == "":
-#     results_text = "subtracted intervals are identical"
-# else:
-#     results_text = "subtracted intervals are not identical:" + diff
-results_text = "subtracted intervals are identical" # TODO
+subtracted_intervals_pr = human_gr[human_gr.Feature == "exon"].subtract(other_cdf, strandedness="same")
+subtracted_intervals_sql = get_subtracted_intervals_sql_multi()
+subtracted_intervals_sql.to_csv("subtracted_intervals_sql.csv", index=False)
+subtracted_intervals_pr.df.to_csv("subtracted_intervals_pr.csv", index=False)
+os.system("cat subtracted_intervals_sql.csv | sort > subtracted_intervals_sql_sorted.csv")
+os.system("cat subtracted_intervals_pr.csv | sort > subtracted_intervals_pr_sorted.csv")
+diff = os.popen("diff subtracted_intervals_sql_sorted.csv subtracted_intervals_pr_sorted.csv").read()
+if diff == "":
+    results_text = "subtracted intervals are identical"
+else:
+    results_text = "subtracted intervals are not identical:" + diff
 if OUTPUT_MODE == "file":
     results_file.write(f"{results_text}\n")
 else:
