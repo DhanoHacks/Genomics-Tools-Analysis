@@ -85,6 +85,7 @@ def run_gtf_to_sql(db_name, table_name, input_file, batch_size=100000000, chunk_
     """
     # Connect to the SQLite database.
     # Set check_same_thread=False so that the connection can be used by multiple threads.
+    start_time = time.time()
     conn = sqlite3.connect(db_name, check_same_thread=False)
     cur = conn.cursor()
 
@@ -168,9 +169,11 @@ def run_gtf_to_sql(db_name, table_name, input_file, batch_size=100000000, chunk_
         PRAGMA temp_store = MEMORY;
     """)
     conn.commit()
+    elapsed = time.time() - start_time
+    print(f"Time taken to create table and set PRAGMA options: {elapsed*1000:.0f}ms")
 
     # Create a shared queue for SQL batches and an event to signal when reading is done.
-    sql_queue = queue.Queue()
+    sql_queue = queue.Queue(maxsize=1)
     read_done = threading.Event()
 
     # Writer thread function: waits for SQL batches and executes them.
@@ -191,13 +194,18 @@ def run_gtf_to_sql(db_name, table_name, input_file, batch_size=100000000, chunk_
         with open(input_file, "r") as f:
             while True:
                 # Read a chunk of lines from the file
+                start_time = time.time()
                 lines = f.readlines(batch_size)
                 if not lines:
                     break
+                elapsed = time.time() - start_time
+                print(f"Read {len(lines)} lines from file in {elapsed*1000:.0f}ms")
+                
+                # Process the lines in batches using Ray
                 start_time = time.time()
                 futures = []
                 for i in range(0, len(lines), chunk_size):
-                    # Each batch processes CHUNK_SIZE lines at once.
+                    # Each batch processes chunk_size lines at once.
                     lines_batch = lines[i:i+chunk_size]
                     futures.append(process_batch.remote(lines_batch, table_name))
                 elapsed = time.time() - start_time
@@ -255,6 +263,17 @@ def main():
     run_gtf_to_sql(db_name, table_name, input_file)
 
 if __name__ == "__main__":
+    start_time = time.time()
     ray.init()
+    elapsed = time.time() - start_time
+    print(f"Ray initialized in {elapsed*1000:.0f}ms")
+    # Run the main function
+    start_time = time.time()
     main()
+    elapsed = time.time() - start_time
+    print(f"Main function completed in {elapsed*1000:.0f}ms")
+    # Shutdown Ray
+    start_time = time.time()
     ray.shutdown()
+    elapsed = time.time() - start_time
+    print(f"Ray shutdown in {elapsed*1000:.0f}ms")
