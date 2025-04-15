@@ -16,7 +16,9 @@ from gtf_to_sql import run_gtf_to_sql
 ray.init()
 
 # %%
+# sql_table_name = "human"
 sql_table_name = "mouse"
+# gtf_file_name = "Homo_sapiens.GRCh38.112.chr.gtf"
 gtf_file_name = "gencode.vM36.annotation.gtf"
 sql_db_name = f"db-{sql_table_name}.sqlite3"
 # sql_db_name = f"file:{sql_table_name}gtf?mode=memory&cache=shared"
@@ -31,8 +33,8 @@ results_file_name = f"results_{sql_table_name}.txt"
 #     ctypes.c_char_p,  # input_file
 #     ctypes.c_int,     # num_threads
 # ]
-OUTPUT_MODE = "print"
-# OUTPUT_MODE = "file"
+# OUTPUT_MODE = "print"
+OUTPUT_MODE = "file"
 
 # %%
 # This should be a module-level global so each Ray worker gets its own connection
@@ -238,7 +240,7 @@ else:
 if sql_table_name == "human":
     other_genes_dict = {"Chromosome": ["1"], "Start": [1000000], "End": [2000000], "Strand": ["+"]}
 elif sql_table_name == "mouse":
-    other_genes_dict = {"Chromosome": ["chr1"], "Start": [1000000], "End": [2000000], "Strand": ["+"]}
+    other_genes_dict = {"Chromosome": ["chr1"], "Start": [3000000], "End": [4000000], "Strand": ["+"]}
 
 # %%
 # Using pyranges

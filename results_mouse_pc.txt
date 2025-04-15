@@ -1,0 +1,21 @@
+Finished reading into pyranges object in time 27.322113513946533
+Finished writing into sql db in time 22.304139137268066
+Finished reading from sql to pyranges in time 16.275750398635864
+Time taken to count exons using pyranges is 2.8 s ± 3.85 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
+Time taken to count exons using sql is 608 ms ± 6.71 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
+exon counts are identical
+Time taken to calculate total exon length using pyranges is 3.22 s ± 2.21 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
+Time taken to calculate total exon length using sql is 694 ms ± 1.91 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
+exon lengths are identical
+Time taken to find chromosome with most transcripts using pyranges is 650 ms ± 3.58 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
+Time taken to find chromosome with most transcripts using sql is 322 ms ± 1.16 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
+transcript counts are identical
+Time taken to merge exons using pyranges is 1.03 s ± 12.9 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
+Time taken to merge exons using sql is 380 ms ± 8.15 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
+exon intervals are identical
+Time taken to find overlapping genes using pyranges is 212 ms ± 2.07 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
+Time taken to find overlapping genes using sql is 150 ms ± 892 μs per loop (mean ± std. dev. of 7 runs, 10 loops each)
+overlapping genes are identical
+Time taken to subtract intervals using pyranges is 5.17 s ± 16.5 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
+Time taken to subtract intervals using sql is 6.32 s ± 36.2 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
+subtracted intervals are identical
