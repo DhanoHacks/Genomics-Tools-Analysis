@@ -106,10 +106,11 @@ def make_plot(results, species_name, filename):
     plt.savefig(filename)
 
 def main():
-    human_results = parse_results_file("results_human.txt")
-    mouse_results = parse_results_file("results_mouse.txt")
-    make_plot(human_results, "Human Genome", "results_human.png")
-    make_plot(mouse_results, "Mouse Genome", "results_mouse.png")
+    for system in ['pc','cluster']:
+        human_results = parse_results_file(f"results/human_{system}.txt")
+        mouse_results = parse_results_file(f"results/mouse_{system}.txt")
+        make_plot(human_results, "Human Genome", f"results/human_{system}.png")
+        make_plot(mouse_results, "Mouse Genome", f"results/mouse_{system}.png")
 
 if __name__ == "__main__":
     main()

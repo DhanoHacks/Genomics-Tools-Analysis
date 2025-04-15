@@ -21,7 +21,10 @@ data_dir = "/data1/dhananjayraman"
 gtf_file_name = f"{data_dir}/Homo_sapiens.GRCh38.112.chr.gtf"
 sql_db_name = f"{data_dir}/db-{sql_table_name}.sqlite3"
 # sql_db_name = f"file:{sql_table_name}gtf?mode=memory&cache=shared"
-results_file_name = f"results_{sql_table_name}.txt"
+if data_dir == "/data1/dhananjayraman":
+    results_file_name = f"results/{sql_table_name}_cluster.txt"
+else:
+    results_file_name = f"results/{sql_table_name}_pc.txt"
 # os.system("g++ -std=c++11 -shared -fPIC -o gtf_to_sql.so gtf_to_sql.cpp -lsqlite3 -pthread")
 # os.system("g++ -std=c++11 -shared -fPIC -o gtf_to_sql.so gtf_to_sql.cpp -lduckdb -pthread -lstdc++")
 # lib = ctypes.CDLL("./gtf_to_sql.so")
