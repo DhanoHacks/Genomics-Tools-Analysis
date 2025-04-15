@@ -109,8 +109,10 @@ def main():
     for system in ['pc','cluster']:
         human_results = parse_results_file(f"results/human_{system}.txt")
         mouse_results = parse_results_file(f"results/mouse_{system}.txt")
+        arabidopsis_results = parse_results_file(f"results/arabidopsis_{system}.txt")
         make_plot(human_results, "Human Genome", f"results/human_{system}.png")
         make_plot(mouse_results, "Mouse Genome", f"results/mouse_{system}.png")
+        make_plot(arabidopsis_results, "Arabidopsis Genome", f"results/arabidopsis_{system}.png")
 
 if __name__ == "__main__":
     main()

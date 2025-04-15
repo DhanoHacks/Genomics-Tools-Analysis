@@ -1,6 +1,9 @@
 pyranges
 pandas
 numpy
-gffutils
-pybedtools
 ray
+ray[cpp]
+setuptools
+ipywidgets
+duckdb
+matplotlib

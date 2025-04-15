@@ -2,6 +2,7 @@ schema.txt
 *.sqlite3
 *.duckdb
 *.gtf
+*.gff3
 *.out
 __pycache__/
 .vscode/
