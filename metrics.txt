@@ -1,5 +1,0 @@
-10000 lines read: 3ms -> 40ms/400k lines
-10000 lines process: 400ms -> 16000ms/400k lines
-200000 lines push to db: 2700ms -> 5400ms/400k lines
-
-std::vector<std::string> all_columns = {"Chromosome", "Source", "Feature", "Start", "End", "Score", "Strand", "Frame",     "gene_id", "gene_version", "gene_source", "gene_biotype", "transcript_id", "transcript_version", "transcript_source", "transcript_biotype", "tag", "transcript_support_level", "exon_number", "exon_id", "exon_version", "gene_name", "transcript_name", "protein_id", "protein_version", "ccds_id"};

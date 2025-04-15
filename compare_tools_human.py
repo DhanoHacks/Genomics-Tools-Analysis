@@ -17,8 +17,9 @@ ray.init()
 
 # %%
 sql_table_name = "human"
-gtf_file_name = "Homo_sapiens.GRCh38.112.chr.gtf"
-sql_db_name = f"db-{sql_table_name}.sqlite3"
+data_dir = "/data1/dhananjayraman"
+gtf_file_name = f"{data_dir}/Homo_sapiens.GRCh38.112.chr.gtf"
+sql_db_name = f"{data_dir}/db-{sql_table_name}.sqlite3"
 # sql_db_name = f"file:{sql_table_name}gtf?mode=memory&cache=shared"
 results_file_name = f"results_{sql_table_name}.txt"
 # os.system("g++ -std=c++11 -shared -fPIC -o gtf_to_sql.so gtf_to_sql.cpp -lsqlite3 -pthread")
@@ -344,11 +345,11 @@ else:
 # check if subtracted_intervals_pr and subtracted_intervals_sql are identical
 subtracted_intervals_pr = gr[gr.Feature == "exon"].subtract(other_cdf, strandedness="same")
 subtracted_intervals_sql = get_subtracted_intervals_sql_multi()
-subtracted_intervals_sql.to_csv("subtracted_intervals_sql.csv", index=False)
-subtracted_intervals_pr.df.to_csv("subtracted_intervals_pr.csv", index=False)
-os.system("cat subtracted_intervals_sql.csv | sort > subtracted_intervals_sql_sorted.csv")
-os.system("cat subtracted_intervals_pr.csv | sort > subtracted_intervals_pr_sorted.csv")
-diff = os.popen("diff subtracted_intervals_sql_sorted.csv subtracted_intervals_pr_sorted.csv").read()
+subtracted_intervals_sql.to_csv(f"{data_dir}/subtracted_intervals_sql.csv", index=False)
+subtracted_intervals_pr.df.to_csv(f"{data_dir}/subtracted_intervals_pr.csv", index=False)
+os.system(f"cat {data_dir}/subtracted_intervals_sql.csv | sort > {data_dir}/subtracted_intervals_sql_sorted.csv")
+os.system(f"cat {data_dir}/subtracted_intervals_pr.csv | sort > {data_dir}/subtracted_intervals_pr_sorted.csv")
+diff = os.popen(f"diff {data_dir}/subtracted_intervals_sql_sorted.csv {data_dir}/subtracted_intervals_pr_sorted.csv").read()
 if diff == "":
     results_text = "subtracted intervals are identical"
 else:

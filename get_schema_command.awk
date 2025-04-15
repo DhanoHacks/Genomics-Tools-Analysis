@@ -1,1 +1,0 @@
-awk -F'|' 'NR > 1 {printf "\"%s\" %s, ", $2, $3} END {print ");"}' input.txt
