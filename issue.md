@@ -23,4 +23,4 @@ Here are the results from our tests on a personal laptop and a computing cluster
 
 Overall, we are seeing lower computational times across all aggregate and interval queries, at the cost of slightly more processing time for conversion from GTF/GFF3 to SQLite3 database (though that is also not a major issue since SQLite3 database is persistent on disk, and hence, file processing needs to be done only once and not every time someone wants to re-run their analysis).
 
-Please let us know if this is something worth looking into. Perhaps we can have a discussion on how to properly integrate this into the existing codebase.
+Would pyranges be interested in incorporating this? If so, I am happy to make PR.
